@@ -143,6 +143,45 @@
                     })
                     .style("fill", function (d) { return color(d.name); });
             }
+			function showMovies(genre) {
+    // Filter the data to include only the selected genre
+    let filteredData = flatData.filter(function (d) {
+        return d.Genre === genre;
+    });
+
+    // Sort the data by year
+    filteredData.sort(function (a, b) {
+        return a.Year - b.Year;
+    });
+
+    // Clear the SVG
+    svg.selectAll("*").remove();
+
+    // Create a new visualization showing the individual movies within the selected genre
+    let x = d3.scaleLinear()
+        .domain(d3.extent(filteredData, function (d) { return d.Year; }))
+        .range([0, width]);
+
+    let y = d3.scaleLinear()
+        .domain([0, d3.max(filteredData, function (d) { return d.Income; })])
+        .range([height, 0]);
+
+    svg.append("g")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(x).ticks(5));
+
+    svg.append("g")
+        .call(d3.axisLeft(y));
+
+    svg.selectAll("dot")
+        .data(filteredData)
+        .enter()
+        .append("circle")
+        .attr("cx", function (d) { return x(d.Year); })
+        .attr("cy", function (d) { return y(d.Income); })
+        .attr("r", 5)
+        .style("fill", "#69b3a2");
+}
 
             function updateChart(genres) {
                 // Show or hide the reset button
@@ -185,12 +224,24 @@
                     .on("click", function (d) {
                         updateChart([d.key]);
                     });
+                // Enter new areas
+    areas.enter()
+        .append("path")
+        .style("fill", function (d) { return color(d.key); })
+        .attr("d", d3.area()
+            .x(function (d, i) { return x(+d.data.Year); })
+            .y0(function (d) { return y(d[0]); })
+            .y1(function (d) { return y(d[1]) || 0; })
+        )
+        .on("click", function (d) {
+            if (genres.length === 1) {
+                showMovies(genres[0]);
+            } else {
+                updateChart([d.key]);
             }
-    
-            document.getElementById("resetButton").addEventListener("click", function () {
-                updateChart(keys);
-            });
-    
+        });
+			}
+		
             svg.selectAll("mylayers")
                 .data(stackedData)
                 .enter()
@@ -205,7 +256,11 @@
                     updateChart([d.key]);
                 });
 
+			  document.getElementById("resetButton").addEventListener("click", function () {
+        updateChart(keys);
+    });
         });
+
 
     </script>
 </body>

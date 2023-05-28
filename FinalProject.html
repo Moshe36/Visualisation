@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<style>
+    .spaceKeeper {
+        margin-top: 40px;
+        margin-bottom: 0px;
+    }
+</style>
+
+<head>
+    <meta charset="UTF-8">
+    <title>1000 Movies -</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.9.1/d3-tip.min.js"></script>
+
+</head>
+
+<body>
+    <div class="spaceKeeper"></div>
+    <div id="my_dataviz"></div>
+    <button id="resetButton" style="display: none;">Reset</button>
+
+    <script type="text/javascript">
+
+        // Define the dimensions and margins of the graph
+        let margin = { top: 10, right: 30, bottom: 20, left: 100 },
+            width = 1500 - margin.left - margin.right,
+            height = 400 - margin.top - margin.bottom;
+
+        // Append the svg object to the body of the page
+        let svg = d3.select("#my_dataviz")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform",
+                "translate(" + margin.left + "," + margin.top + ")");
+
+        d3.csv("movies.csv").then(function (csvData) {
+            // Parse and flatten the data so that there's one row per movie per genre
+            let flatData = [];
+            csvData.forEach(function (d) {
+                let genres = JSON.parse(d.Genre.replace(/'/g, '"'));
+                genres.forEach(function (genre) {
+                    flatData.push({
+                        Year: new Date(d["Release Date"]).getFullYear(),
+                        Genre: genre,
+                        Movie: d.Title,
+                        Income: +d["World Sales (in $)"]
+                    });
+                });
+            });
+            let groupByYearGenre = d3.group(flatData, d => d.Year, d => d.Genre);
+            let aggregateData = Array.from(groupByYearGenre, ([year, genres]) => ({
+                Year: year,
+                ...Array.from(genres, ([genre, movies]) => [genre, d3.sum(movies, d => d.Income)]).reduce((o, [k, v]) => (o[k] = v, o), {})
+            }));
+
+
+            console.log("aggregateData:", aggregateData); // Log aggregateData here
+
+            // Sort by year
+            aggregateData.sort(function (a, b) { return a.Year - b.Year; });
+
+            // List of groups = header of the csv files = soil condition here
+            let keys = Array.from(new Set(flatData.map(d => d.Genre)));
+            //let keys = Array.from(new Set(aggregateData.map(d => d.Genre))); 
+            // Add X axis
+            let x = d3.scaleLinear()
+                .domain(d3.extent(aggregateData, function (d) { return +d.Year; }))
+                .range([0, width]);
+            svg.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).ticks(5));
+
+            // Add Y axis
+            let y = d3.scaleLinear()
+                .domain([0, d3.max(aggregateData, function (d) { return d3.sum(keys, key => +d[key] || 0) })])
+                .range([height, 0]);
+            svg.append("g")
+                .call(d3.axisLeft(y));
+            console.log("keys:", keys);
+            // color palette
+            let color = d3.scaleOrdinal()
+                .domain(keys)
+                .range(d3.schemeSet2);
+
+            //stack the data
+            let stackedData = d3.stack()
+                .keys(keys)
+                (aggregateData)
+
+
+            console.log("stackedData:", stackedData); // Log stackedData here
+            function redraw() {
+
+                var effort = [];
+                var obj = {
+                    pfte: "20",
+                    efte: "50",
+                    qName: "Q1"
+                };
+                var obj2 = {
+                    pfte: "10",
+                    efte: "13",
+                    qName: "Q2"
+                };
+
+                effort[0] = obj;
+                effort[1] = obj2;
+                var newDataSet = new Object();
+                newDataSet.effort = effort;
+
+                color.domain(d3.keys(newDataSet.effort[0]).filter(function (key) {
+                    return key !== "qName";
+                }));
+
+                effortDataSet = newDataSet.effort;
+                effortDataSet.forEach(function (d) {
+                    var y0 = 0;
+                    d.effortHr = color.domain().map(function (name) {
+                        return { name: name, y0: y0, y1: y0 += +d[name] };
+                    });
+                    d.total = d.effortHr[d.effortHr.length - 1].y1;
+                });
+
+                state = svg.selectAll(".g")
+                    .data(effortDataSet)
+                    .attr("class", "g")
+                    .attr("transform", function (d) { return "translate(" + x(d.qName) + ",0)"; });
+
+                state = state.selectAll("rect")
+                    .data(function (d) {
+                        return d.effortHr;
+                    })
+                    .attr("width", x.rangeBand())
+                    .attr("y", function (d) {
+                        return y(d.y1);
+                    })
+                    .attr("height", function (d) {
+                        //console.log(y(d.y0) - y(d.y1));
+                        return y(d.y0) - y(d.y1);
+                    })
+                    .style("fill", function (d) { return color(d.name); });
+            }
+
+            function updateChart(genres) {
+                // Show or hide the reset button
+                document.getElementById("resetButton").style.display = (genres.length > 1) ? "none" : "block";
+    
+                // Filter the data to include only the selected genres
+                let filteredData = aggregateData.map(function (d) {
+                    let row = { Year: d.Year };
+                    genres.forEach(function (genre) {
+                        row[genre] = d[genre];
+                    });
+                    return row;
+                });
+    
+                // Recalculate the stack
+                let stackedData = d3.stack()
+                    .keys(genres)
+                    (filteredData);
+    
+                // Adjust the domain of the y-axis to the new data
+                y.domain([0, d3.max(filteredData, function (d) { return d3.sum(genres, key => +d[key] || 0) })]);
+    
+                // Redraw the y-axis
+                svg.select("g").call(d3.axisLeft(y));
+    
+                // Clear the existing areas
+                svg.selectAll("path").remove();
+    
+                // Redraw the areas
+                svg.selectAll("mylayers")
+                    .data(stackedData)
+                    .enter()
+                    .append("path")
+                    .style("fill", function (d) { return color(d.key); })
+                    .attr("d", d3.area()
+                        .x(function (d, i) { return x(+d.data.Year); })
+                        .y0(function (d) { return y(d[0]); })
+                        .y1(function (d) { return y(d[1]) || 0; })
+                    )
+                    .on("click", function (d) {
+                        updateChart([d.key]);
+                    });
+            }
+    
+            document.getElementById("resetButton").addEventListener("click", function () {
+                updateChart(keys);
+            });
+    
+            svg.selectAll("mylayers")
+                .data(stackedData)
+                .enter()
+                .append("path")
+                .style("fill", function (d) { return color(d.key); })
+                .attr("d", d3.area()
+                    .x(function (d, i) { return x(+d.data.Year); })
+                    .y0(function (d) { return y(d[0]); })
+                    .y1(function (d) { return y(d[1]) || 0; })
+                )
+                .on("click", function (d) {
+                    updateChart([d.key]);
+                });
+
+        });
+
+    </script>
+</body>
+
+</html>

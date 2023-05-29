@@ -22,40 +22,37 @@ const svg = d3.select("#my_dataviz")
     .attr("transform",
           `translate(${margin.left}, ${margin.top})`);
 
-// Parse the Data
-d3.csv("movies.csv").then(function (data) {
+          d3.csv("movies.csv").then(function (csvData) {
+            // Parse and flatten the data so that there's one row per movie per genre
+            let flatData = [];
+            csvData.forEach(function (d) {
+                let genres = JSON.parse(d.Genre.replace(/'/g, '"'));
+                genres.forEach(function (genre) {
+                    flatData.push({
+                        Year: new Date(d["Release Date"]).getFullYear(),
+                        Genre: genre,
+                        Movie: d.Title,
+                        Income: +d["World Sales (in $)"]
+                    });
+                });
+            });
+        
+            let groupByYearGenre = d3.group(flatData, d => d.Year, d => d.Genre);
+            let aggregateData = Array.from(groupByYearGenre, ([year, genres]) => ({
+                Year: year,
+                ...Array.from(genres, ([genre, movies]) => [genre, d3.sum(movies, d => d.Income)]).reduce((o, [k, v]) => (o[k] = v, o), {})
+            }));
+        
+            // Sort by year
+            aggregateData.sort(function (a, b) { return a.Year - b.Year; });
+        
+            // List of groups = header of the csv files = soil condition here
+            let keys = Array.from(new Set(flatData.map(d => d.Genre)));
+        
 
-  // Preprocess the data to fit the expected structure
-  let processedData = [];
-  let genresSet = new Set();
-  data.forEach(function (d) {
-      let year = new Date(d["Release Date"]).getFullYear();
-      let genres = JSON.parse(d.Genre.replace(/'/g, '"'));
-      genres.forEach(function (genre) {
-          genresSet.add(genre);
-          let row = processedData.find(r => r.year === year && r.genre === genre);
-          if (!row) {
-              row = { year: year, genre: genre, sales: 0 };
-              processedData.push(row);
-          }
-          row.sales += +d["World Sales (in $)"];
-      });
-  });
+        
 
-  // Transform the data into wide format
-  let wideData = [];
-  let years = Array.from(new Set(processedData.map(d => d.year)));
-  years.forEach(function (year) {
-      let row = { year: year };
-      genresSet.forEach(function (genre) {
-          let d = processedData.find(r => r.year === year && r.genre === genre);
-          row[genre] = d ? d.sales : 0;
-      });
-      wideData.push(row);
-  });
 
-  // List of groups = header of the csv files
-  const keys = Array.from(genresSet);
 
   //////////
   // GENERAL //
@@ -71,7 +68,7 @@ d3.csv("movies.csv").then(function (data) {
   //stack the data?
   const stackedData = d3.stack()
     .keys(keys)
-    (data)
+    (aggregateData)
 
 
 
@@ -79,13 +76,13 @@ d3.csv("movies.csv").then(function (data) {
   // AXIS //
   //////////
 
-  // Add X axis
-  const x = d3.scaleLinear()
-    .domain(d3.extent(data, function(d) { return d.year; }))
-    .range([ 0, width ]);
-  const xAxis = svg.append("g")
-    .attr("transform", `translate(0, ${height})`)
-    .call(d3.axisBottom(x).ticks(5))
+            // Add X axis
+            let x = d3.scaleLinear()
+                .domain(d3.extent(aggregateData, function (d) { return +d.Year; }))
+                .range([0, width]);
+            svg.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).ticks(5));
 
   // Add X axis label:
   svg.append("text")
@@ -102,14 +99,14 @@ d3.csv("movies.csv").then(function (data) {
       .text("# of baby born")
       .attr("text-anchor", "start")
 
-  // Add Y axis
-  const y = d3.scaleLinear()
-    .domain([0, 200000])
-    .range([ height, 0 ]);
-  svg.append("g")
-    .call(d3.axisLeft(y).ticks(5))
 
 
+            // Add Y axis
+            let y = d3.scaleLinear()
+                .domain([0, d3.max(aggregateData, function (d) { return d3.sum(keys, key => +d[key] || 0) })])
+                .range([height, 0]);
+            svg.append("g")
+                .call(d3.axisLeft(y));
 
   //////////
   // BRUSHING AND CHART //

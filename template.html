@@ -23,15 +23,45 @@ const svg = d3.select("#my_dataviz")
           `translate(${margin.left}, ${margin.top})`);
 
 // Parse the Data
-d3.csv("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/5_OneCatSevNumOrdered_wide.csv").then( function(data) {
+d3.csv("movies.csv").then(function (data) {
 
+  // Preprocess the data to fit the expected structure
+  let processedData = [];
+  let genresSet = new Set();
+  data.forEach(function (d) {
+      let year = new Date(d["Release Date"]).getFullYear();
+      let genres = JSON.parse(d.Genre.replace(/'/g, '"'));
+      genres.forEach(function (genre) {
+          genresSet.add(genre);
+          let row = processedData.find(r => r.year === year && r.genre === genre);
+          if (!row) {
+              row = { year: year, genre: genre, sales: 0 };
+              processedData.push(row);
+          }
+          row.sales += +d["World Sales (in $)"];
+      });
+  });
+
+  // Transform the data into wide format
+  let wideData = [];
+  let years = Array.from(new Set(processedData.map(d => d.year)));
+  years.forEach(function (year) {
+      let row = { year: year };
+      genresSet.forEach(function (genre) {
+          let d = processedData.find(r => r.year === year && r.genre === genre);
+          row[genre] = d ? d.sales : 0;
+      });
+      wideData.push(row);
+  });
+
+  // List of groups = header of the csv files
+  const keys = Array.from(genresSet);
 
   //////////
   // GENERAL //
   //////////
 
   // List of groups = header of the csv files
-  const keys = data.columns.slice(1)
 
   // color palette
   const color = d3.scaleOrdinal()

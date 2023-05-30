@@ -1,267 +1,286 @@
 <!DOCTYPE html>
 <html>
-<style>
-    .spaceKeeper {
-        margin-top: 40px;
-        margin-bottom: 0px;
-    }
-</style>
 
 <head>
-    <meta charset="UTF-8">
-    <title>1000 Movies -</title>
-    <script src="https://d3js.org/d3.v6.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.9.1/d3-tip.min.js"></script>
-
+    <style>
+        #scatterplot {
+            display: none;
+        }
+        .tooltip {
+            position: absolute;
+            background: #f9f9f9;
+            color: #333;
+            border-radius: 5px;
+            padding: 10px;
+            pointer-events: none;
+            border: 1px solid #d4d4d4;
+            display: none;
+            width: 300px;
+        }
+    </style>
+    <meta charset="utf-8">
+    <title></title>
 </head>
 
 <body>
-    <div class="spaceKeeper"></div>
-    <div id="my_dataviz"></div>
-    <button id="resetButton" style="display: none;">Reset</button>
+    <div id="area"></div>
+    <div id="scatterplot">
+        <button id="back">Back</button>
+        <div id="chart"></div>
+    </div>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
 
-    <script type="text/javascript">
+        // Create a tooltip div
+        var tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .attr("id", "tooltip");
 
-        // Define the dimensions and margins of the graph
-        let margin = { top: 10, right: 30, bottom: 20, left: 100 },
-            width = 1500 - margin.left - margin.right,
-            height = 400 - margin.top - margin.bottom;
+        d3.csv("Highest Holywood Grossing Movies.csv").then(function (data) { 
 
-        // Append the svg object to the body of the page
-        let svg = d3.select("#my_dataviz")
-            .append("svg")
-            .attr("width", width + margin.left + margin.right)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform",
-                "translate(" + margin.left + "," + margin.top + ")");
+            var splitMovies = [];
 
-        d3.csv("movies.csv").then(function (csvData) {
-            // Parse and flatten the data so that there's one row per movie per genre
-            let flatData = [];
-            csvData.forEach(function (d) {
-                let genres = JSON.parse(d.Genre.replace(/'/g, '"'));
+            data.forEach(function (movie) {
+                // Assuming genre is a string that looks like an array.
+                var genres = JSON.parse(movie.Genre.replace(/'/g, '"'));
                 genres.forEach(function (genre) {
-                    flatData.push({
-                        Year: new Date(d["Release Date"]).getFullYear(),
-                        Genre: genre,
-                        Movie: d.Title,
-                        Income: +d["World Sales (in $)"]
-                    });
+                    var newMovie = { ...movie };  // Create a copy of the movie object
+                    newMovie.Genre = genre;  // Replace the genre attribute
+                    splitMovies.push(newMovie);
                 });
             });
-            let groupByYearGenre = d3.group(flatData, d => d.Year, d => d.Genre);
-            let aggregateData = Array.from(groupByYearGenre, ([year, genres]) => ({
-                Year: year,
-                ...Array.from(genres, ([genre, movies]) => [genre, d3.sum(movies, d => d.Income)]).reduce((o, [k, v]) => (o[k] = v, o), {})
-            }));
+
+            var dataForStackArea = splitMovies.filter(d => d['Release Date'] !== 'NA')
+
+            document.getElementById("back").addEventListener("click", function() {
+            document.getElementById("area").style.display = "block"; // show the area div
+            document.getElementById("scatterplot").style.display = "none"; // hide the scatterplot div
+        });
+
+        
+        
+            createStackChart(dataForStackArea)
 
 
-            console.log("aggregateData:", aggregateData); // Log aggregateData here
+        })
+        .catch(function(error) {
+          console.log(error);
+        });
 
-            // Sort by year
-            aggregateData.sort(function (a, b) { return a.Year - b.Year; });
+        function createStackChart(splitMovies) {
+            // Parse date
+            var parseTime = d3.timeParse("%B %d, %Y");
 
-            // List of groups = header of the csv files = soil condition here
-            let keys = Array.from(new Set(flatData.map(d => d.Genre)));
-            //let keys = Array.from(new Set(aggregateData.map(d => d.Genre))); 
-            // Add X axis
-            let x = d3.scaleLinear()
-                .domain(d3.extent(aggregateData, function (d) { return +d.Year; }))
-                .range([0, width]);
-            svg.append("g")
+            splitMovies.forEach(function (d) {
+                var date = parseTime(d["Release Date"]);
+                d["Release Date"] = date.getFullYear();
+                d["International Sales (in $)"] = +d["International Sales (in $)"];
+            });
+
+            // Sort the data by date
+            splitMovies.sort((a, b) => a["Release Date"] - b["Release Date"]);
+
+            // First, group the data by release date
+            var dataByDate = d3.group(splitMovies, d => d["Release Date"]);
+
+            // Define all possible genres
+            var allGenres = Array.from(new Set(splitMovies.map(d => d.Genre)));
+
+            // Then, for each date, sum the sales by genre
+            var stackedData = Array.from(dataByDate, ([date, movies]) => {
+                var totalSalesByGenre = d3.rollup(movies, v => d3.sum(v, d => d["International Sales (in $)"]), d => d.Genre);
+                var dateEntry = { date: date };
+                allGenres.forEach(genre => {
+                    dateEntry[genre] = totalSalesByGenre.get(genre) || 0;
+                });
+                return dateEntry;
+            });
+
+
+            var stack = d3.stack()
+                .keys(Array.from(new Set(splitMovies.map(d => d.Genre))))
+                .order(d3.stackOrderNone)
+                .offset(d3.stackOffsetNone);
+
+            var series = stack(stackedData);  
+
+            var svg = d3.select("#area").append("svg")
+                .attr("width", 1500)
+                .attr("height", 800);
+
+            var margin = { top: 50, right: 20, bottom: 30, left: 70 };
+            var width = +svg.attr("width") - margin.left - margin.right;
+            var height = +svg.attr("height") - margin.top - margin.bottom;
+            var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            var x = d3.scaleLinear().rangeRound([0, width]);
+            var y = d3.scaleLinear().rangeRound([height, 0]);
+            var z = d3.scaleOrdinal(d3.schemeCategory10);
+
+            x.domain(d3.extent(stackedData, function (d) { return d.date; }));
+            y.domain([0, d3.max(series, s => d3.max(s, d => d[1]))]).nice();
+
+            var area = d3.area()
+                .x(d => x(d.data.date))
+                .y0(d => y(d[0]))
+                .y1(d => y(d[1]));
+
+            // create a tooltip
+            var Tooltip = g
+                .append("text")
+                .attr("x", 10)
+                .attr("y", 10)
+                .style("opacity", 0)
+                .style("font-size", 17)
+
+            g.append("g")
+                .attr("class", "axis axis--x")
                 .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisBottom(x).ticks(5));
-
-            // Add Y axis
-            let y = d3.scaleLinear()
-                .domain([0, d3.max(aggregateData, function (d) { return d3.sum(keys, key => +d[key] || 0) })])
-                .range([height, 0]);
-            svg.append("g")
-                .call(d3.axisLeft(y));
-            console.log("keys:", keys);
-            // color palette
-            let color = d3.scaleOrdinal()
-                .domain(keys)
-                .range(d3.schemeSet2);
-
-            //stack the data
-            let stackedData = d3.stack()
-                .keys(keys)
-                (aggregateData)
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+                .append("text")
+                .attr("fill", "#000")
+                .attr("y", 30)
+                .style('font-size' , '12px')
+                .attr("x", width/2)
+                .attr("text-anchor", "middle")
+                .text("Release Date");
 
 
-            console.log("stackedData:", stackedData); // Log stackedData here
-            function redraw() {
+            g.append("g")
+                .attr("class", "axis axis--y")
+                .call(d3.axisLeft(y).ticks(10, "s"))
+                .append("text")
+                .attr("fill", "#000")
+                .attr("transform", "rotate(-90)")
+                .attr("y", -margin.left/2 - 20)
+                .attr("x", -height/2)
+                .style('font-size' , '12px')
+                .attr("dy", "0.71em")
+                .attr("text-anchor", "middle")
+                .text("International Sales (in $)");
+ 
+            g.append("text")
+                .attr("x", width / 2)
+                .attr("y", 0 - (margin.top / 2))
+                .attr("text-anchor", "middle")
+                .style("font-size", "20px")
+                .style("text-decoration", "underline")
+                .text("Movies Sales Over the Years per Genre");
 
-                var effort = [];
-                var obj = {
-                    pfte: "20",
-                    efte: "50",
-                    qName: "Q1"
-                };
-                var obj2 = {
-                    pfte: "10",
-                    efte: "13",
-                    qName: "Q2"
-                };
+            var layer = g.selectAll(".layer")
+                .data(series)
+                .join("g")
+                .attr("class", "layer");
 
-                effort[0] = obj;
-                effort[1] = obj2;
-                var newDataSet = new Object();
-                newDataSet.effort = effort;
+            layer.append("path")
+                .attr("class", "area")
+                .attr("d", area)
+                .style("fill", d => z(d.key))
+                .on("mouseover", function (event, d) {
+                    Tooltip.style("opacity", 1)
+                    d3.selectAll(".area").style("opacity", .2)
+                    d3.select(this)
+                        // .style("stroke", "black")
+                        .style("opacity", 1)
+                })
+                .on("mousemove", function (event, d, i) { 
+                    grp = d.key
+                    Tooltip.text('Genre: ' + grp)
+                })
+                .on("mouseleave", function (event, d) {
+                    Tooltip.style("opacity", 0)
+                    d3.selectAll(".area").style("opacity", 1).style("stroke", "none")
+                })
+                .on('click', (event, d) => {
+                    var gerneData = splitMovies.filter(a => a.Genre == d.key)
+                    createScatterPlot(gerneData, z(d.key) , d.key)
+                    document.getElementById("area").style.display = "none"; // hide the area div
+                    document.getElementById("scatterplot").style.display = "block"; // show the scatterplot div
 
-                color.domain(d3.keys(newDataSet.effort[0]).filter(function (key) {
-                    return key !== "qName";
-                }));
-
-                effortDataSet = newDataSet.effort;
-                effortDataSet.forEach(function (d) {
-                    var y0 = 0;
-                    d.effortHr = color.domain().map(function (name) {
-                        return { name: name, y0: y0, y1: y0 += +d[name] };
-                    });
-                    d.total = d.effortHr[d.effortHr.length - 1].y1;
-                });
-
-                state = svg.selectAll(".g")
-                    .data(effortDataSet)
-                    .attr("class", "g")
-                    .attr("transform", function (d) { return "translate(" + x(d.qName) + ",0)"; });
-
-                state = state.selectAll("rect")
-                    .data(function (d) {
-                        return d.effortHr;
-                    })
-                    .attr("width", x.rangeBand())
-                    .attr("y", function (d) {
-                        return y(d.y1);
-                    })
-                    .attr("height", function (d) {
-                        //console.log(y(d.y0) - y(d.y1));
-                        return y(d.y0) - y(d.y1);
-                    })
-                    .style("fill", function (d) { return color(d.name); });
-            }
-			function showMovies(genre) {
-    // Filter the data to include only the selected genre
-    let filteredData = flatData.filter(function (d) {
-        return d.Genre === genre;
-    });
-
-    // Sort the data by year
-    filteredData.sort(function (a, b) {
-        return a.Year - b.Year;
-    });
-
-    // Clear the SVG
-    svg.selectAll("*").remove();
-
-    // Create a new visualization showing the individual movies within the selected genre
-    let x = d3.scaleLinear()
-        .domain(d3.extent(filteredData, function (d) { return d.Year; }))
-        .range([0, width]);
-
-    let y = d3.scaleLinear()
-        .domain([0, d3.max(filteredData, function (d) { return d.Income; })])
-        .range([height, 0]);
-
-    svg.append("g")
-        .attr("transform", "translate(0," + height + ")")
-        .call(d3.axisBottom(x).ticks(5));
-
-    svg.append("g")
-        .call(d3.axisLeft(y));
-
-    svg.selectAll("dot")
-        .data(filteredData)
-        .enter()
-        .append("circle")
-        .attr("cx", function (d) { return x(d.Year); })
-        .attr("cy", function (d) { return y(d.Income); })
-        .attr("r", 5)
-        .style("fill", "#69b3a2");
-}
-
-            function updateChart(genres) {
-                // Show or hide the reset button
-                document.getElementById("resetButton").style.display = (genres.length > 1) ? "none" : "block";
-    
-                // Filter the data to include only the selected genres
-                let filteredData = aggregateData.map(function (d) {
-                    let row = { Year: d.Year };
-                    genres.forEach(function (genre) {
-                        row[genre] = d[genre];
-                    });
-                    return row;
-                });
-    
-                // Recalculate the stack
-                let stackedData = d3.stack()
-                    .keys(genres)
-                    (filteredData);
-    
-                // Adjust the domain of the y-axis to the new data
-                y.domain([0, d3.max(filteredData, function (d) { return d3.sum(genres, key => +d[key] || 0) })]);
-    
-                // Redraw the y-axis
-                svg.select("g").call(d3.axisLeft(y));
-    
-                // Clear the existing areas
-                svg.selectAll("path").remove();
-    
-                // Redraw the areas
-                svg.selectAll("mylayers")
-                    .data(stackedData)
-                    .enter()
-                    .append("path")
-                    .style("fill", function (d) { return color(d.key); })
-                    .attr("d", d3.area()
-                        .x(function (d, i) { return x(+d.data.Year); })
-                        .y0(function (d) { return y(d[0]); })
-                        .y1(function (d) { return y(d[1]) || 0; })
-                    )
-                    .on("click", function (d) {
-                        updateChart([d.key]);
-                    });
-                // Enter new areas
-    areas.enter()
-        .append("path")
-        .style("fill", function (d) { return color(d.key); })
-        .attr("d", d3.area()
-            .x(function (d, i) { return x(+d.data.Year); })
-            .y0(function (d) { return y(d[0]); })
-            .y1(function (d) { return y(d[1]) || 0; })
-        )
-        .on("click", function (d) {
-            if (genres.length === 1) {
-                showMovies(genres[0]);
-            } else {
-                updateChart([d.key]);
-            }
-        });
-			}
-		
-            svg.selectAll("mylayers")
-                .data(stackedData)
-                .enter()
-                .append("path")
-                .style("fill", function (d) { return color(d.key); })
-                .attr("d", d3.area()
-                    .x(function (d, i) { return x(+d.data.Year); })
-                    .y0(function (d) { return y(d[0]); })
-                    .y1(function (d) { return y(d[1]) || 0; })
-                )
-                .on("click", function (d) {
-                    updateChart([d.key]);
-                });
-
-			  document.getElementById("resetButton").addEventListener("click", function () {
-        updateChart(keys);
-    });
-        });
+                })
 
 
+        }
+
+        function createScatterPlot(data, color , selectedGenre) {
+
+            d3.select('#chart svg').remove();
+
+            var svg = d3.select("#chart").append("svg")
+                .attr("width", 1000)
+                .attr("height", 600);
+
+            var margin = { top:50, right: 20, bottom: 50, left: 70 };
+            var width = +svg.attr("width") - margin.left - margin.right;
+            var height = +svg.attr("height") - margin.top - margin.bottom;
+            var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            var x = d3.scaleLinear().rangeRound([0, width]).nice();
+            var y = d3.scaleLinear().rangeRound([height, 0]).nice();
+
+            x.domain(d3.extent(data, function (d) { return d["Release Date"]; }));
+            y.domain([0, d3.max(data, function (d) { return d["International Sales (in $)"]; })]);
+
+            g.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+                .append("text")
+                .attr("fill", "#000")
+                .attr("y", 30)
+                .style('font-size' , '12px')
+                .attr("x", width/2)
+                .attr("text-anchor", "middle")
+                .text("Release Date");
+
+            g.append("g")
+                .call(d3.axisLeft(y).ticks(10, "s"))
+                .append("text")
+                .attr("fill", "#000")
+                .attr("transform", "rotate(-90)")
+                .attr("y", -margin.left/2 - 20)
+                .attr("x", -height/2)
+                .style('font-size' , '12px')
+                .attr("dy", "0.71em")
+                .attr("text-anchor", "middle")
+                .text("International Sales (in $)");
+
+            g.append("text")
+                .attr("x", width / 2)
+                .attr("y", 0 - (margin.top / 2))
+                .attr("text-anchor", "middle")
+                .style("font-size", "20px")
+                .style("text-decoration", "underline")
+                .text("Movies Sales Over the Years for " + selectedGenre);
+
+            g.selectAll(".dot")
+                .data(data)
+                .join("circle")
+                .attr("class", "dot")
+                .attr("cx", function (d) { return x(d["Release Date"]); })
+                .attr("cy", function (d) { return y(d["International Sales (in $)"]); })
+                .attr("r", 2)
+                .attr('fill-opacity' , 0.2)
+                .attr('stroke' , color)
+                .attr('fill', color)
+                .on("mouseover", function(event, d) {
+                    d3.select(this).attr('r' , 4).attr('fill' , 'black').attr('stroke' , 'bkack')
+
+                tooltip.style("display", "inline");
+                tooltip.html("<b>Title: </b>" + d.Title +
+                 "<br/><b>Sales: </b>" + d["International Sales (in $)"] +'$'+
+                 "<br/><b>Info: </b>" + d["Movie Info"] );
+            })
+            .on("mousemove", function(event, d) {
+                tooltip.style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 10) + "px");
+            })
+            .on("mouseout", function(event, d) {
+                d3.select(this).attr('r' , 2).attr('fill' , color).attr('stroke' , color)
+                tooltip.style("display", "none");
+            });
+
+
+        }
     </script>
 </body>
 

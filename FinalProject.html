@@ -2,11 +2,14 @@
 <html>
 
 <head>
+    <!-- CSS styles for the scatterplot and tooltip -->
     <style>
+        /* This style is for the scatterplot, which is initially hidden */
         #scatterplot {
             display: none;
         }
 
+        /* This style is for the tooltip, which is used to display additional information when hovering over data points */
         .tooltip {
             position: absolute;
             background: #f9f9f9;
@@ -24,54 +27,63 @@
 </head>
 
 <body>
+    <!-- The div where the area chart will be displayed -->
     <div id="area"></div>
+
+    <!-- The div where the scatterplot will be displayed -->
     <div id="scatterplot">
+        <!-- Button to go back to the area chart from the scatterplot -->
         <button id="back">Back</button>
+        <!-- The div where the chart itself will be displayed -->
         <div id="chart"></div>
     </div>
+
+    <!-- Importing the D3.js library -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+
     <script>
 
         // Create a tooltip div
         var tooltip = d3.select("body").append("div")
-            .attr("class", "tooltip")
-            .attr("id", "tooltip");
+            .attr("class", "tooltip") // Assigning the class 'tooltip' to style it
+            .attr("id", "tooltip"); // Assigning the id 'tooltip' for specific selection
 
+        // Load the CSV data
         d3.csv("Highest Holywood Grossing Movies.csv").then(function (data) {
-
+            // Splitting the movies based on genre
             var splitMovies = [];
-
             data.forEach(function (movie) {
                 // Assuming genre is a string that looks like an array.
-                var genres = JSON.parse(movie.Genre.replace(/'/g, '"'));
+                var genres = JSON.parse(movie.Genre.replace(/'/g, '\"'));
                 genres.forEach(function (genre) {
                     var newMovie = { ...movie };  // Create a copy of the movie object
                     newMovie.Genre = genre;  // Replace the genre attribute
-                    splitMovies.push(newMovie);
+                    splitMovies.push(newMovie); // Push the new movie object to the splitMovies array
                 });
             });
 
-            var dataForStackArea = splitMovies.filter(d => d['Release Date'] !== 'NA')
+            var dataForStackArea = splitMovies.filter(d => d['Release Date'] !== 'NA') // Filter out movies without a release date
 
+            // Add an event listener to the 'back' button
             document.getElementById("back").addEventListener("click", function () {
                 document.getElementById("area").style.display = "block"; // show the area div
                 document.getElementById("scatterplot").style.display = "none"; // hide the scatterplot div
             });
 
-
-
+            // Call the function to create the stack chart
             createStackChart(dataForStackArea)
-
-
         })
             .catch(function (error) {
+                // Log any errors that occur during data loading
                 console.log(error);
             });
 
+        // Function to create the stack chart
         function createStackChart(splitMovies) {
             // Parse date
             var parseTime = d3.timeParse("%B %d, %Y");
 
+            // Convert release date to year and international sales to number
             splitMovies.forEach(function (d) {
                 var date = parseTime(d["Release Date"]);
                 d["Release Date"] = date.getFullYear();
@@ -80,7 +92,6 @@
 
             // Sort the data by date
             splitMovies.sort((a, b) => a["Release Date"] - b["Release Date"]);
-
             var genreTotals = d3.rollups(
                 splitMovies,
                 v => d3.sum(v, d => d["International Sales (in $)"]),

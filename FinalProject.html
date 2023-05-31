@@ -134,6 +134,7 @@
                 .extent([[0, 0], [width, height]])
                 .on("zoom", zoomed); // This is the listener to execute on zoom event
 
+
             var svg = d3.select("#area").append("svg")
                 .attr("width", SVGwidth)
                 .attr("height", SVGHeight)
@@ -333,6 +334,7 @@
             // Define the zoom behavior.
             var zoom = d3.zoom()
                 .scaleExtent([1, 10]) // This controls how far you can zoom in and out.
+                .translateExtent([[0, 0], [width, height]]) // This define the limit of panning 
                 .extent([[0, 0], [width, height]])
                 .on("zoom", zoomed);
 
@@ -406,16 +408,23 @@
                 // create new scale objects based on event
                 var new_xScale = event.transform.rescaleX(x);
                 var new_yScale = event.transform.rescaleY(y);
-
+            
+                // limit the x and y translation (panning) to non-negative values
+                if (event.transform.x > 0) event.transform.x = 0;
+                if (event.transform.y > 0) event.transform.y = 0;
+            
                 // update axes
                 g.select(".x-axis").call(d3.axisBottom(new_xScale).tickFormat(d3.format("d")).ticks(50));
                 g.select(".y-axis").call(d3.axisLeft(new_yScale).ticks(10, "s"));
-
+            
                 // update circle positions
                 chartGroup.selectAll(".dot")
                     .attr('cx', d => new_xScale(d["Release Date"]))
                     .attr('cy', d => new_yScale(d["International Sales (in $)"]));
             }
+            
+            
+            
 
 
 

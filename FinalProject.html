@@ -6,6 +6,7 @@
         #scatterplot {
             display: none;
         }
+
         .tooltip {
             position: absolute;
             background: #f9f9f9;
@@ -36,7 +37,7 @@
             .attr("class", "tooltip")
             .attr("id", "tooltip");
 
-        d3.csv("Highest Holywood Grossing Movies.csv").then(function (data) { 
+        d3.csv("Highest Holywood Grossing Movies.csv").then(function (data) {
 
             var splitMovies = [];
 
@@ -52,20 +53,20 @@
 
             var dataForStackArea = splitMovies.filter(d => d['Release Date'] !== 'NA')
 
-            document.getElementById("back").addEventListener("click", function() {
-            document.getElementById("area").style.display = "block"; // show the area div
-            document.getElementById("scatterplot").style.display = "none"; // hide the scatterplot div
-        });
+            document.getElementById("back").addEventListener("click", function () {
+                document.getElementById("area").style.display = "block"; // show the area div
+                document.getElementById("scatterplot").style.display = "none"; // hide the scatterplot div
+            });
 
-        
-        
+
+
             createStackChart(dataForStackArea)
 
 
         })
-        .catch(function(error) {
-          console.log(error);
-        });
+            .catch(function (error) {
+                console.log(error);
+            });
 
         function createStackChart(splitMovies) {
             // Parse date
@@ -79,6 +80,12 @@
 
             // Sort the data by date
             splitMovies.sort((a, b) => a["Release Date"] - b["Release Date"]);
+
+            var genreTotals = d3.rollups(
+                splitMovies,
+                v => d3.sum(v, d => d["International Sales (in $)"]),
+                d => d.Genre
+            ).reduce((obj, [key, value]) => (obj[key] = value, obj), {});
 
             // First, group the data by release date
             var dataByDate = d3.group(splitMovies, d => d["Release Date"]);
@@ -102,20 +109,64 @@
                 .order(d3.stackOrderNone)
                 .offset(d3.stackOffsetNone);
 
-            var series = stack(stackedData);  
+            var series = stack(stackedData);
+
+            var SVGwidth = 1600
+            var SVGHeight = 600
+            var margin = { top: 50, right: 200, bottom: 30, left: 70 };
+            var width = SVGwidth - margin.left - margin.right;
+            var height = SVGHeight - margin.top - margin.bottom;
+
+            var zoom = d3.zoom()
+                .scaleExtent([1, 10]) // This define the limit of zoom (min, max)
+                .translateExtent([[0, 0], [width, height]]) // This define the limit of panning 
+                .extent([[0, 0], [width, height]])
+                .on("zoom", zoomed); // This is the listener to execute on zoom event
 
             var svg = d3.select("#area").append("svg")
-                .attr("width", 1500)
-                .attr("height", 800);
+                .attr("width", SVGwidth)
+                .attr("height", SVGHeight)
+                .call(zoom);
 
-            var margin = { top: 50, right: 20, bottom: 30, left: 70 };
-            var width = +svg.attr("width") - margin.left - margin.right;
-            var height = +svg.attr("height") - margin.top - margin.bottom;
-            var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+            svg.append("defs").append("clipPath")
+                .attr("id", "clip")
+                .append("rect")
+                .attr("width", width)
+                .attr("height", height);
+
+            var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")")
+            // Create a secondary 'g' element with the clip-path, specifically for the chart
+            var chartGroup = g.append("g")
+                .attr("clip-path", "url(#clip)");
+
+            function zoomed(event) {
+                // create new scale objects based on event
+                var new_xScale = event.transform.rescaleX(x);
+                var new_yScale = event.transform.rescaleY(y);
+
+                // update axes
+                g.select(".axis--x").call(d3.axisBottom(new_xScale).tickFormat(d3.format("d")).ticks(50));
+                g.select(".axis--y").call(d3.axisLeft(new_yScale).ticks(10, "s"));
+
+                // update area
+                area.x(d => new_xScale(d.data.date))
+                    .y0(d => new_yScale(d[0]))
+                    .y1(d => new_yScale(d[1]));
+
+                // update areas
+                chartGroup.selectAll(".area")
+                    .attr("d", area);
+            }
 
             var x = d3.scaleLinear().rangeRound([0, width]);
             var y = d3.scaleLinear().rangeRound([height, 0]);
-            var z = d3.scaleOrdinal(d3.schemeCategory10);
+            var z = d3.scaleOrdinal().range([
+                '#e6194B', '#3cb44b', '#ffe119', '#0082c8', '#f58231',
+                '#911eb4', '#46f0f0', '#f032e6', '#d2f53c', '#00FFFF',
+                '#008080', '#800000', '#AA6E28', '#800080', '#808000',
+                '#FF00FF', '#000080', '#808080', '#000000', '#FFA500',
+                '#FF4500'
+            ]);
 
             x.domain(d3.extent(stackedData, function (d) { return d.date; }));
             y.domain([0, d3.max(series, s => d3.max(s, d => d[1]))]).nice();
@@ -136,15 +187,14 @@
             g.append("g")
                 .attr("class", "axis axis--x")
                 .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")).ticks(50))
                 .append("text")
                 .attr("fill", "#000")
                 .attr("y", 30)
-                .style('font-size' , '12px')
-                .attr("x", width/2)
+                .style('font-size', '12px')
+                .attr("x", width / 2)
                 .attr("text-anchor", "middle")
                 .text("Release Date");
-
 
             g.append("g")
                 .attr("class", "axis axis--y")
@@ -152,13 +202,13 @@
                 .append("text")
                 .attr("fill", "#000")
                 .attr("transform", "rotate(-90)")
-                .attr("y", -margin.left/2 - 20)
-                .attr("x", -height/2)
-                .style('font-size' , '12px')
+                .attr("y", -margin.left / 2 - 20)
+                .attr("x", -height / 2)
+                .style('font-size', '12px')
                 .attr("dy", "0.71em")
                 .attr("text-anchor", "middle")
                 .text("International Sales (in $)");
- 
+
             g.append("text")
                 .attr("x", width / 2)
                 .attr("y", 0 - (margin.top / 2))
@@ -167,12 +217,11 @@
                 .style("text-decoration", "underline")
                 .text("Movies Sales Over the Years per Genre");
 
-            var layer = g.selectAll(".layer")
+            chartGroup.selectAll(".layer")
                 .data(series)
                 .join("g")
-                .attr("class", "layer");
-
-            layer.append("path")
+                .attr("class", "layer")
+                .append("path")
                 .attr("class", "area")
                 .attr("d", area)
                 .style("fill", d => z(d.key))
@@ -180,40 +229,89 @@
                     Tooltip.style("opacity", 1)
                     d3.selectAll(".area").style("opacity", .2)
                     d3.select(this)
-                        // .style("stroke", "black")
                         .style("opacity", 1)
+                    tooltip.style("display", "inline");
                 })
-                .on("mousemove", function (event, d, i) { 
+                .on("mousemove", function (event, d, i) {
+                    // Rest of your code...
+
+                    var year = x.invert(d3.pointer(event)[0]); // Gets the year that the mouse is hovering over.
+                    year = Math.round(year)
+
+                    // Filter the data to only include entries for the current genre and year, and sum the sales.
+                    var salesForGenreAndYear = d3.sum(splitMovies.filter(a => a.Genre === d.key && a["Release Date"] === year), a => a["International Sales (in $)"]);
+
+                    // Set the tooltip's HTML to show these sales.
+                    tooltip.html("<b>Total Sales for " + d.key + " in " + year + ": </b>" + salesForGenreAndYear + '$');
+
                     grp = d.key
                     Tooltip.text('Genre: ' + grp)
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
                 })
                 .on("mouseleave", function (event, d) {
                     Tooltip.style("opacity", 0)
+                    tooltip.style("display", "none");
                     d3.selectAll(".area").style("opacity", 1).style("stroke", "none")
                 })
                 .on('click', (event, d) => {
                     var gerneData = splitMovies.filter(a => a.Genre == d.key)
-                    createScatterPlot(gerneData, z(d.key) , d.key)
+                    createScatterPlot(gerneData, z(d.key), d.key)
                     document.getElementById("area").style.display = "none"; // hide the area div
                     document.getElementById("scatterplot").style.display = "block"; // show the scatterplot div
 
                 })
 
+            //adding legend
+            var legendSize = 10;  // Size of the squares in the legend
+            var legendSpacing = 8;  // Spacing between legend entries
 
+            // Create a group for the legend and position it in the right margin.
+            var legend = g.append("g")
+                .attr("transform", "translate(" + (width) + ",0)");
+
+            // Create one group per genre for the legend.
+            var legendEntries = legend.selectAll("g")
+                .data(z.domain())
+                .join("g")
+                .attr("transform", (d, i) => "translate(0," + i * (legendSize + legendSpacing) + ")");
+
+            // In each group, create a square and set its color.
+            legendEntries.append("rect")
+                .attr("width", legendSize)
+                .attr("height", legendSize)
+                .style("fill", z);
+
+            // In each group, create a label to the right of the square.
+            legendEntries.append("text")
+                .attr("x", legendSize + legendSpacing - 5)
+                .attr("y", legendSize - legendSpacing + 8)
+                .text(d => d);
         }
 
-        function createScatterPlot(data, color , selectedGenre) {
+        function createScatterPlot(data, color, selectedGenre) {
 
             d3.select('#chart svg').remove();
-
             var svg = d3.select("#chart").append("svg")
-                .attr("width", 1000)
+                .attr("width", 1400)
                 .attr("height", 600);
 
-            var margin = { top:50, right: 20, bottom: 50, left: 70 };
+            var margin = { top: 50, right: 20, bottom: 50, left: 70 };
             var width = +svg.attr("width") - margin.left - margin.right;
             var height = +svg.attr("height") - margin.top - margin.bottom;
+
+            // Adjust the clip path to have the same transformation as the 'g' element.
+            svg.append("defs").append("clipPath")
+                .attr("id", "clipm")
+                .append("rect")
+                .attr("width", width)
+                .attr("height", height);
+
             var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            // Create a secondary 'g' element with the clip-path, specifically for the chart
+            var chartGroup = g.append("g")
+                .attr("clip-path", "url(#clipm)");
 
             var x = d3.scaleLinear().rangeRound([0, width]).nice();
             var y = d3.scaleLinear().rangeRound([height, 0]).nice();
@@ -221,25 +319,33 @@
             x.domain(d3.extent(data, function (d) { return d["Release Date"]; }));
             y.domain([0, d3.max(data, function (d) { return d["International Sales (in $)"]; })]);
 
+            // Define the zoom behavior.
+            var zoom = d3.zoom()
+                .scaleExtent([1, 10]) // This controls how far you can zoom in and out.
+                .extent([[0, 0], [width, height]])
+                .on("zoom", zoomed);
+
             g.append("g")
+                .attr("class", "x-axis")
                 .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")).ticks(50))
                 .append("text")
                 .attr("fill", "#000")
                 .attr("y", 30)
-                .style('font-size' , '12px')
-                .attr("x", width/2)
+                .style('font-size', '12px')
+                .attr("x", width / 2)
                 .attr("text-anchor", "middle")
                 .text("Release Date");
 
             g.append("g")
+                .attr("class", "y-axis")
                 .call(d3.axisLeft(y).ticks(10, "s"))
                 .append("text")
                 .attr("fill", "#000")
                 .attr("transform", "rotate(-90)")
-                .attr("y", -margin.left/2 - 20)
-                .attr("x", -height/2)
-                .style('font-size' , '12px')
+                .attr("y", -margin.left / 2 - 20)
+                .attr("x", -height / 2)
+                .style('font-size', '12px')
                 .attr("dy", "0.71em")
                 .attr("text-anchor", "middle")
                 .text("International Sales (in $)");
@@ -252,35 +358,58 @@
                 .style("text-decoration", "underline")
                 .text("Movies Sales Over the Years for " + selectedGenre);
 
-            g.selectAll(".dot")
+            chartGroup.selectAll(".dot")
                 .data(data)
                 .join("circle")
                 .attr("class", "dot")
                 .attr("cx", function (d) { return x(d["Release Date"]); })
                 .attr("cy", function (d) { return y(d["International Sales (in $)"]); })
-                .attr("r", 2)
-                .attr('fill-opacity' , 0.2)
-                .attr('stroke' , color)
+                .attr("r", 3)
+                .attr('fill-opacity', 0.5)
+                .attr('stroke', color)
                 .attr('fill', color)
-                .on("mouseover", function(event, d) {
-                    d3.select(this).attr('r' , 4).attr('fill' , 'black').attr('stroke' , 'bkack')
+                .on("mouseover", function (event, d) {
+                    d3.select(this).attr('r', 5).attr('fill', 'black').attr('stroke', 'bkack')
 
-                tooltip.style("display", "inline");
-                tooltip.html("<b>Title: </b>" + d.Title +
-                 "<br/><b>Sales: </b>" + d["International Sales (in $)"] +'$'+
-                 "<br/><b>Info: </b>" + d["Movie Info"] );
-            })
-            .on("mousemove", function(event, d) {
-                tooltip.style("left", (event.pageX + 10) + "px")
-                    .style("top", (event.pageY - 10) + "px");
-            })
-            .on("mouseout", function(event, d) {
-                d3.select(this).attr('r' , 2).attr('fill' , color).attr('stroke' , color)
-                tooltip.style("display", "none");
-            });
+                    tooltip.style("display", "inline");
+                    tooltip.html("<b>Title: </b>" + d.Title +
+                        "<br/><b>Sales: </b>" + d["International Sales (in $)"] + '$' +
+                        "<br/><b>Distributor: </b>" + d["Distributor"] +
+                        "<br/><b>Movie Runtime: </b>" + d["Movie Runtime"] +
+                        "<br/><b>Info: </b>" + d["Movie Info"]);
+                })
+                .on("mousemove", function (event, d) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", function (event, d) {
+                    d3.select(this).attr('r', 3).attr('fill', color).attr('stroke', color)
+                    tooltip.style("display", "none");
+                })
+
+
+            // Call the zoom behavior on your SVG.
+            svg.call(zoom);
+
+            function zoomed(event) {
+                // create new scale objects based on event
+                var new_xScale = event.transform.rescaleX(x);
+                var new_yScale = event.transform.rescaleY(y);
+
+                // update axes
+                g.select(".x-axis").call(d3.axisBottom(new_xScale).tickFormat(d3.format("d")).ticks(50));
+                g.select(".y-axis").call(d3.axisLeft(new_yScale).ticks(10, "s"));
+
+                // update circle positions
+                chartGroup.selectAll(".dot")
+                    .attr('cx', d => new_xScale(d["Release Date"]))
+                    .attr('cy', d => new_yScale(d["International Sales (in $)"]));
+            }
+
 
 
         }
+
     </script>
 </body>
 
